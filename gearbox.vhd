@@ -1,0 +1,113 @@
+-- Code your design here
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
+use IEEE.math_real.all;
+--functional, but I dont like it much , the implementation , to see , to correct
+entity gearbox8b10b is
+generic (
+	DATA_IN_WIDTH : integer := 8;
+    DATA_OUT_WIDTH : integer := 10;
+);
+port (
+	i_clk , rst : in std_logic;
+	data_in : in std_logic_vector ( DATA_IN_WIDTH - 1 downto 0);
+	data_out : out std_logic_vector ( DATA_OUT_WIDTH - 1 downto 0 );
+    o_ce : out std_logic
+);
+end entity gearbox8b10b;
+
+architecture rtl of gearbox8b10b is
+
+signal data_in_reg : std_logic_vector ( DATA_IN_WIDTH - 1 downto 0):= ( others => '0');
+signal rx_count : unsigned (integer(ceil(log2 (real( DATA_IN_WIDTH * 2 )))) - 1 downto 0) := ( others => '0');
+
+signal data_full : std_logic_vector ( 2 * DATA_IN_WIDTH - 1 downto 0 ) := ( others => '0');
+
+signal new_data_full_reg : std_logic_vector ( 2 * DATA_IN_WIDTH - 1 downto 0 ) := ( others => '0'); --hardcoded 2* data_in_width since we know its 8b 10 b the relation, but in fact also for 64 66 trhe same would be
+
+signal start , valid : std_logic := '0';
+
+signal data_out_reg : std_logic_vector ( DATA_OUT_WIDTH - 1 downto 0 ):= ( others => '0');
+signal o_ce_Reg : std_logic := '0';
+
+
+
+begin
+--sample the input data
+process ( i_clk)
+begin
+if rising_Edge ( i_clk )then
+if rst = '1' then
+	data_in_reg <= ( others => '0');
+else
+	data_in_reg <= data_in;
+end if;
+end if;
+
+end process;
+
+process ( i_clk ) 
+begin
+if rising_Edge ( i_clk) then
+	if rst = '1' then
+	data_out_reg <= ( others => '0');
+    new_data_full_reg <= ( others => '0');
+    o_ce_Reg <= '0';
+    elsif valid = '1' then
+    if rx_count = 2 then  -- functional but not the best implementation , i dont like it much tbh , to see
+    new_data_full_reg  <= data_full  ;
+    o_ce_Reg <= '0';
+    else
+    data_out_reg <= data_full ( 10 - 1 downto 0 );
+	new_data_full_reg  <= data_full srl 10 ;
+    o_ce_Reg <= '1';
+    end if;
+    else
+    new_data_full_reg  <= data_full  ;
+    o_ce_Reg <= '0';
+	end if;
+end if;  
+  
+end process;
+
+process ( data_in_reg , new_data_full_Reg)
+variable data_in_shifted  : std_logic_vector ( 2*DATA_IN_WIDTH - 1 downto 0):= ( others => '0');
+begin
+data_in_shifted := (( 15 downto 8 => '0') & data_in_reg ) sll to_integer( rx_count ) ;
+
+data_full <=  new_data_full_reg or ( data_in_shifted);
+end process;
+process ( i_clk )
+begin
+if rising_Edge ( i_clk ) then
+if rst = '1' then
+	start <= '0';
+    valid <= '0';
+    rx_count <= ( others => '0');
+else
+	if start = '1' then
+    valid <= '1'; -- because the next clocked process will see it later meanwhile the comb circuit has resolved the validity
+    
+    if rx_count > 2 then
+		rx_count <= rx_count + 8 - 10;
+        
+	elsif rx_count = 2 then -- because rx_Count holds the previous value technically,so if the previous value was 2 we added 8 and outputed 10 then right now the rx_count would go to 0
+    	rx_count <= ( others => '0');
+        valid <= '0';
+        --
+    else
+		rx_count <= rx_count + 8;
+	end if;
+	else
+    	valid <= '0';
+		start <= '1';
+	end if;
+end if;
+end if;
+end process;
+
+data_out <= data_out_reg;
+o_ce <= o_ce_Reg;
+
+end architecture rtl;
